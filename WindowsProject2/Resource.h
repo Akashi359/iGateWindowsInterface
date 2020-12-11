@@ -12,10 +12,10 @@
 #define IDC_WINDOWSPROJECT2             109
 #define IDD_ABOUTBOX					110
 #define IDD_ADDPANE						111
-#define IDC_ADDPANE_PORTNAME			112
+#define IDC_ADDPANE_PORTNUM			112
 #define IDC_ADDPANE_FILENAME			113
 #define	IDD_REMOVEPANE					114
-#define	IDC_REMOVEPANE_PORTNAME					114
+#define	IDC_REMOVEPANE_PORTNUM					114
 #define IDR_MAINFRAME                   128
 #define IDC_STATIC                      -1
 

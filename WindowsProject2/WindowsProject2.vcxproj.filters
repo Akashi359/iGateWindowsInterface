@@ -45,6 +45,12 @@
     <ClInclude Include="iGateDeviceSupport.h">
       <Filter>Header Files</Filter>
     </ClInclude>
+    <ClInclude Include="PaneInfo.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="cpyalloc.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="WindowsProject2.cpp">
@@ -53,8 +59,14 @@
     <ClCompile Include="ComPortManager.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="PaneInfo.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
     <ClCompile Include="iGateDeviceSupportDummy.c">
-      <Filter>Header Files</Filter>
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="cpyalloc.cpp">
+      <Filter>Source Files</Filter>
     </ClCompile>
   </ItemGroup>
   <ItemGroup>

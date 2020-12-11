@@ -1,23 +1,10 @@
 #include "framework.h"
 #include "ComPortManager.h"
 #include "WindowsProject2.h"
+#include "cpyalloc.h"
 #include <process.h>
 extern "C" {
 	#include "iGateDeviceSupport.h"
-}
-
-char* cpyalloc(const char* src, size_t maxChars) {
-	char* newBuffer = (char*)malloc(sizeof(char)*(maxChars + 1));
-	newBuffer[maxChars] = '\0';
-	strncpy(newBuffer, src, maxChars);
-	return newBuffer;
-}
-
-wchar_t* cpyalloc(const wchar_t* src, size_t maxChars) {
-	wchar_t* newBuffer = (wchar_t*)malloc(sizeof(wchar_t)*(maxChars + 1));
-	newBuffer[maxChars] = '\0';
-	wcsncpy(newBuffer, src, maxChars);
-	return newBuffer;
 }
 
 WriteArg::WriteArg(const char* buffer, int numChars) {
@@ -59,8 +46,8 @@ bool ComPortManager::logAndQuit(const char* errorMsg) {
 	return false;
 }
 
-ComPortManager::ComPortManager(const wchar_t* comPortName, const wchar_t* fileName, HWND uiWindow, int paneID) {
-	mPaneID = paneID;
+ComPortManager::ComPortManager(unsigned comPortNum, const wchar_t* fileName, HWND uiWindow) {
+	//Assemble file path from file name:
 	size_t filePathLen = GetCurrentDirectory(0, NULL) + wcslen(fileName) + 1; //+1 for additional slash character
 	mFilePathW = (wchar_t*)malloc(sizeof(wchar_t)*(filePathLen + 1)); //+1 again for terminating null character
 	GetCurrentDirectoryW(filePathLen, mFilePathW);
@@ -68,11 +55,21 @@ ComPortManager::ComPortManager(const wchar_t* comPortName, const wchar_t* fileNa
 	wcscat(mFilePathW, fileName);
 	mFilePath = (char*)malloc(sizeof(char*)*(filePathLen + 1));
 	wcstombs(mFilePath, mFilePathW, filePathLen + 1);
-	mUiWindow = uiWindow;
-	size_t comPortLen = wcslen(comPortName);
-	mComPortNameW = cpyalloc(comPortName, comPortLen + 1);
-	mComPortName = (char*)malloc(sizeof(char*)*(comPortLen + 1));
-	wcstombs(mComPortName, mComPortNameW, (comPortLen + 1));
+
+	//Assemble the com port name from the com port number:
+	this->comPortNum = comPortNum;
+	size_t itowSize = 0;
+	for (unsigned temp = comPortNum; temp > 0; temp /= 10)
+		itowSize++;
+	mComPortNameW = (wchar_t*)malloc(sizeof(wchar_t)*(8 + itowSize));
+	wcscpy(mComPortNameW, L"\\\\.\\COM");
+	_itow(comPortNum, mComPortNameW + 7, 10);
+	mComPortName = (char*)malloc(sizeof(char*)*(8 + itowSize));
+	strcpy(mComPortName, "\\\\.\\COM");
+	_itoa(comPortNum, mComPortName + 7, 10);
+
+
+	mPaneWindow = uiWindow;
 	killEvent = CreateEvent(NULL, true, false, NULL);
 	writeRequestEvent = CreateEvent(NULL, true, false, NULL);
 }
@@ -103,7 +100,7 @@ bool ComPortManager::endThread() {
 void ComPortManager::threadFtn(void* threadArg) {
 	ComPortManager* cpmptr = (ComPortManager*)threadArg;
 	if (!cpmptr->connect()) {
-		PostMessage(cpmptr->mUiWindow, WM_THREAD_DOWN, (WPARAM)cpmptr->mPaneID, 0);
+		PostMessage(cpmptr->mPaneWindow, WM_THREAD_DOWN, 0, 0);
 		return;
 	}
 	cpmptr->threadContext = init();
@@ -135,14 +132,14 @@ void ComPortManager::handleRead(const BYTE* buffer, DWORD numChars) {
 		log("WriteFile returned false");
 	log(hexBuffer);
 	readHook(threadContext, hexBuffer, hexBufferSize);
-	PostMessage(mUiWindow, WM_THREAD_RECV, (WPARAM)hexBuffer, hexBufferSize);
+	PostMessage(mPaneWindow, WM_THREAD_RECV, (WPARAM)hexBuffer, hexBufferSize);
 }
 
 void ComPortManager::handleWrite(int errorCode, const char* errorMsg) {
 	log(errorMsg);
 	writeCallback(threadContext, errorCode, errorMsg);
 	if (errorCode == 0)
-		PostMessage(mUiWindow, WM_THREAD_SENT, (WPARAM)mPaneID, 0);
+		PostMessage(mPaneWindow, WM_THREAD_SENT, 0, 0);
 }
 
 bool ComPortManager::connect() {
@@ -209,7 +206,7 @@ bool ComPortManager::connect() {
 	}
 
 	//Everything good
-	PostMessage(mUiWindow, WM_THREAD_UP, (WPARAM)mPaneID, 0);
+	PostMessage(mPaneWindow, WM_THREAD_UP, 0, 0);
 	return true;
 }
 
@@ -413,7 +410,7 @@ void ComPortManager::loop() {
 void ComPortManager::disconnect() {
 	CloseHandle(hCom);
 	CloseHandle(hFile);
-	PostMessage(mUiWindow, WM_THREAD_DOWN, (WPARAM)mPaneID, 0);
+	PostMessage(mPaneWindow, WM_THREAD_DOWN, 0, 0);
 }
 
 
@@ -445,8 +442,10 @@ bool ComPortManager::writeHex(const char* buffer, int numChars) {
 	for (int k = 0; k < numBytes; k++) {
 		int lowerNibble = getNibble(buffer[k * 2 + 1]);
 		int upperNibble = getNibble(buffer[k * 2]);
-		if (lowerNibble < 0 || upperNibble < 0)
+		if (lowerNibble < 0 || upperNibble < 0) {
+			free(newBuffer);
 			return false;
+		}
 		newBuffer[k] = lowerNibble;
 		newBuffer[k] += 16 * upperNibble;
 		unsigned wholeByte = newBuffer[k] & 0x00ff;
@@ -459,14 +458,17 @@ bool ComPortManager::writeHex(const char* buffer, int numChars) {
 	return true;
 }
 
+int ComPortManager::getPortNum() {
+	return comPortNum;
+}
 void ComPortManager::getFileName(char* buffer) {
 	strcpy(buffer, mFilePath);
 }
 void ComPortManager::getPortName(char* buffer) {
 	strcpy(buffer, mComPortName);
 }
-int ComPortManager::getPaneID() {
-	return mPaneID;
+HWND* ComPortManager::getPaneWindowPtr() {
+	return &mPaneWindow;
 }
 /*
 	Not quite sure how to write this so its callable from c code, but I know its possible.

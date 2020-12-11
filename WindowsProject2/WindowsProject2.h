@@ -8,3 +8,6 @@
 #define WM_THREAD_SENT (WM_USER + 4)
 #define WM_DESTROYPANE (WM_USER + 5)//tells the inputwindow to destroy a pane.
 #define WM_CREATEPANE (WM_USER + 6)	//tells the inputwindow to create a new pane.
+#define WM_TEST (WM_USER + 7)
+#define WM_KILLPANE (WM_USER+8) //tells an individual pane that it must prepare for destruction.
+								//also represents the reply back from the pane that it is ready

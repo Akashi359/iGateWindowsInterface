@@ -1,5 +1,5 @@
 #pragma once
-#include <WinDef.h>
+#include <Windows.h>
 #include <stdint.h>
 #include "Queue.h"
 
@@ -17,7 +17,8 @@ class ComPortManager {
 private:
 	static const char* TAG;
 	Queue<WriteArg> messageQueue;
-	HWND mUiWindow;
+	HWND mPaneWindow;
+	unsigned comPortNum;
 	wchar_t* mComPortNameW;
 	char* mComPortName;
 	wchar_t* mFilePathW;
@@ -26,7 +27,6 @@ private:
 	HANDLE hCom, hFile;
 	uint32_t baudRate, dataBits, parity, stopBits;
 	void* threadContext;
-	int mPaneID;
 
 	bool connect();
 	void loop();
@@ -42,7 +42,7 @@ private:
 
 public:
 	void handleRead(const BYTE*, DWORD);
-	ComPortManager(const wchar_t* comPortName, const wchar_t* fileName, HWND uiWindow, int paneID);
+	ComPortManager(unsigned comPortNum, const wchar_t* fileName, HWND uiWindow);
 	~ComPortManager();
 	void startThread(uint32_t baudRate, uint32_t dataBits, uint32_t parity, uint32_t stopBits);
 	bool endThread();
@@ -53,7 +53,9 @@ public:
 	void writeRaw(const char* buffer, int numChars);
 	bool writeHex(const char* buffer, int numChars);
 
+	int getPortNum();
 	void getPortName(char* buffer);
 	void getFileName(char* buffer);
-	int getPaneID();
+
+	HWND* getPaneWindowPtr();
 };

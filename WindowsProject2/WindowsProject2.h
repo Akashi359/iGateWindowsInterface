@@ -11,3 +11,4 @@
 #define WM_TEST (WM_USER + 7)
 #define WM_KILLPANE (WM_USER+8) //tells an individual pane that it must prepare for destruction.
 								//also represents the reply back from the pane that it is ready
+#define WM_THREAD_ERROR (WM_USER+9)

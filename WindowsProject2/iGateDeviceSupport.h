@@ -10,7 +10,7 @@ void readHook(void* threadContext, char* buffer, size_t size);
 	Defined by C code.
 	Called by thread code to indicate the success or failure of a previous call to writeRequest()
 */
-void writeCallback(void* threadContext, int errorCode, const char* errorMsg);
+void writeCallback(void* threadContext, bool succeeded, const char* errorMsg);
 
 /*
 	Defined by C code.

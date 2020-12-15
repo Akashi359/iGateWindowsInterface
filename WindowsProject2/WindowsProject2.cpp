@@ -1,14 +1,14 @@
 // WindowsProject2.cpp : Defines the entry point for the application.
 //
 
-//TODO: finish add pane system
-//TODO: finish delete pane system
-//TODO: implement error popup.
-//TODO: figure out how to use resizewindow() when the pane children don't have their own IDs. https://docs.microsoft.com/en-us/windows/win32/winmsg/window-features#child-windows
+//TODO: implement error popup. implement wm_thread_error message with error name.
+//TODO: track down all uses of malloc and throw an error popup and application shutdown.
 
 #include "framework.h"
 #include "WindowsProject2.h"
 #include "PaneInfo.h"
+#include "ControlIdentifiers.h"
+#include "Message.h"
 #include <unordered_map>
 
 //structs
@@ -24,29 +24,11 @@ const WCHAR* INPUT_CLASSNAME = L"InputScrollerClass";
 const WCHAR* PANE_CLASSNAME = L"PaneClass";
 const WCHAR* ADDPANE_CLASSNAME = L"AddPaneClass";
 const WCHAR* REMOVEPANE_CLASSNAME = L"RemovePaneClass";
+const WCHAR* PORTSETTINGS_CLASSNAME = L"PortSettingsClass";
 const uint16_t MAX_LINE_SIZE = 256;
-const uint16_t MAX_PANE_COUNT = 6;
+const uint16_t MAX_PANE_COUNT = 6; //if you change this number, go into ControlIdentifiers.h and make sure there are enough contiguous ID_PANEX integers reserved.
 const uint16_t PANEWIDTH_IN_PIXELS = 300;
-const uint16_t PANEHEIGHT_IN_PIXELS = 250;
-
-const uint16_t ID_OUTPUT = 100;
-const uint16_t ID_INPUT = 101;
-const uint16_t ID_PANE0 = 102;
-const uint16_t ID_PANE1 = 103;
-const uint16_t ID_PANE2 = 104;
-const uint16_t ID_PANE3 = 105;
-const uint16_t ID_PANE4 = 106;
-const uint16_t ID_PANE5 = 107;
-const uint16_t ID_PORTNAME_LABEL = 108;
-const uint16_t ID_FILENAME_LABEL = 109;
-const uint16_t ID_STATUS_LABEL = 110;
-const uint16_t ID_DEST_LABEL = 111;
-const uint16_t ID_DEST_EDIT = 112;
-const uint16_t ID_COMMAND_LABEL = 113;
-const uint16_t ID_COMMAND_EDIT = 114;
-const uint16_t ID_WRITE_BUTTON = 115;
-const uint16_t ID_CONNECT_BUTTON = 116;
-
+const uint16_t PANEHEIGHT_IN_PIXELS = 300;
 
 const uint16_t IDM_ADDPANE = 3;		//tells the mainwindow that the "add pane" button has been pressed, which will open a dialogbox
 const uint16_t IDM_REMOVEPANE = 4;	//tells the mainwindow that the "remove pane" button has been pressed, which will open a dialogbox
@@ -72,6 +54,7 @@ ATOM                registerOutputClass(HINSTANCE);
 ATOM                registerInputClass(HINSTANCE);
 ATOM				registerAddPaneClass(HINSTANCE);
 ATOM				registerRemovePaneClass(HINSTANCE);
+ATOM				registerPortSettingsClass(HINSTANCE);
 ATOM				registerPaneClass(HINSTANCE);
 LRESULT CALLBACK    MainProc(HWND, UINT, WPARAM, LPARAM);
 LRESULT CALLBACK    OutputProc(HWND, UINT, WPARAM, LPARAM);
@@ -81,11 +64,11 @@ BOOL                InitInstance(HINSTANCE, int);
 INT_PTR CALLBACK    About(HWND, UINT, WPARAM, LPARAM);
 INT_PTR CALLBACK	addPaneProc(HWND, UINT, WPARAM, LPARAM);
 INT_PTR CALLBACK	removePaneProc(HWND, UINT, WPARAM, LPARAM);
+INT_PTR CALLBACK	portSettingsProc(HWND, UINT, WPARAM, LPARAM);
 BOOL CALLBACK		ResizeChildren(HWND, LPARAM);
 void				addMenus(HWND);
-void				addWindows(HWND);
-void				initPane(HWND, int, int);
-void				populatePane(HWND, PaneInfo*);
+void				addWindows(HWND);	
+void				printInt(long);
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -111,6 +94,7 @@ int APIENTRY wWinMain(_In_ HINSTANCE hInstance,
 	registerAddPaneClass(hInstance);
 	registerRemovePaneClass(hInstance);
 	registerPaneClass(hInstance);
+	registerPortSettingsClass(hInstance);
 
     // Perform application initialization:
     if (!InitInstance (hInstance, nCmdShow))
@@ -255,6 +239,10 @@ ATOM registerRemovePaneClass(HINSTANCE hInstance) {
 ATOM registerPaneClass(HINSTANCE hInstance) {
 	return registerClass(hInstance, paneProc, PANE_CLASSNAME);
 }
+
+ATOM registerPortSettingsClass(HINSTANCE hInstance) {
+	return registerClass(hInstance, portSettingsProc, PORTSETTINGS_CLASSNAME);
+}
 //---------------------------------------------------------------------------------------------------------------------------------------------------------------
 //---------------------------------------------------------------------------------------------------------------------------------------------------------------
 //Proc Functions
@@ -312,24 +300,6 @@ LRESULT CALLBACK MainProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
             }
         }
         break;
-	case WM_THREAD_RECV:
-	{
-		//check if the line array is full or not,
-		//free space in circular queue if necessary
-		unsigned lastLine = (startIndex + numLines) % MAX_LINE_SIZE;
-		BOOL lineAdded = numLines < MAX_LINE_SIZE;
-		if (lineAdded)
-			numLines++;
-		else {
-			free(linesArray[startIndex]);
-			startIndex = (++startIndex) % MAX_LINE_SIZE;
-		}
-
-		//place char buffer into line array, tell child to update
-		linesArray[lastLine] = (char*)wParam;
-		SendDlgItemMessage(hWnd, ID_OUTPUT, WM_THREAD_RECV, (WPARAM) lineAdded, 0);
-	}
-		break;
 	case WM_SIZE:
 		RECT rcClient;
 		GetClientRect(hWnd, &rcClient);
@@ -475,9 +445,24 @@ LRESULT CALLBACK OutputProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lPara
 		ScrollWindow(hWnd, 0, yChar * (yPos - si.nPos), NULL, NULL);
 		UpdateWindow(hWnd);
 		break;
+	case WM_THREAD_ERROR:
 	case WM_THREAD_RECV:
+	{
+		//check if the line array is full or not,
+		//free space in circular queue if necessary
+		unsigned lastLine = (startIndex + numLines) % MAX_LINE_SIZE;
+		BOOL lineAdded = numLines < MAX_LINE_SIZE;
+		if (lineAdded)
+			numLines++;
+		else {
+			free(linesArray[startIndex]);
+			startIndex = (++startIndex) % MAX_LINE_SIZE;
+		}
+
+		//place char buffer into line array, tell child to update
+		linesArray[lastLine] = (char*)wParam;
 		//only scroll if a line was added
-		if ((BOOL)wParam) {
+		if (lineAdded) {
 			//retrieve scrollinfo object
 			si.cbSize = sizeof(si);
 			si.fMask = SIF_ALL;
@@ -493,6 +478,7 @@ LRESULT CALLBACK OutputProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lPara
 
 		//tell the system that the screen must be repainted
 		InvalidateRect(hWnd, NULL, true);
+	}
 		break;
 	case WM_PAINT:
 	{
@@ -677,8 +663,11 @@ LRESULT CALLBACK InputProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam
 	case WM_THREAD_SENT:
 		SendDlgItemMessage(hWnd, ID_PANE0 + portNum_to_panePos_map[(unsigned)wParam], message, 0, 0);
 		break;
+	case WM_THREAD_ERROR:
+		SendDlgItemMessage(GetParent(hWnd), ID_OUTPUT, WM_THREAD_ERROR, wParam, lParam);
+		break;
 	case WM_THREAD_RECV:
-		SendMessage(GetParent(hWnd), WM_THREAD_RECV, wParam, lParam);
+		SendDlgItemMessage(GetParent(hWnd), ID_OUTPUT, WM_THREAD_RECV, wParam, lParam);
 		break;
 	case WM_CREATEPANE:
 	{
@@ -694,7 +683,7 @@ LRESULT CALLBACK InputProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam
 			(HMENU)(uint16_t)(ID_PANE0+numPanes),
 			hInst,
 			paneInfoPtrArr+numPanes);
-		populatePane(newPane, paneInfoPtrArr[numPanes]);
+		paneInfoPtrArr[numPanes]->populatePane(newPane);
 		portNum_to_panePos_map[(unsigned)wParam] = numPanes;
 		numPanes++;
 
@@ -726,7 +715,7 @@ LRESULT CALLBACK InputProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam
 		numPanes--;
 		for (int k = paneIndex; k < numPanes; k++) {
 			paneInfoPtrArr[k] = paneInfoPtrArr[k + 1];
-			populatePane(GetDlgItem(hWnd, ID_PANE0 + k), paneInfoPtrArr[k]);
+			paneInfoPtrArr[k]->populatePane(GetDlgItem(hWnd, ID_PANE0 + k));
 			portNum_to_panePos_map[paneInfoPtrArr[k]->getPortNum()] = k;
 		}
 
@@ -767,7 +756,6 @@ LRESULT CALLBACK InputProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam
 LRESULT CALLBACK paneProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam) {
 	int paneIndex = GetDlgCtrlID(hWnd) - ID_PANE0;
 	PaneInfo* paneInfoPtr = paneInfoPtrArr[paneIndex];
-
 	switch (message) {
 	case WM_CREATE:
 	{
@@ -781,7 +769,7 @@ LRESULT CALLBACK paneProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 		// Free the device context. 
 		ReleaseDC(hWnd, hdc);
 
-		initPane(hWnd, tm.tmMaxCharWidth, tm.tmHeight);
+		PaneInfo::initPane(hWnd, PANEWIDTH_IN_PIXELS, tm.tmAveCharWidth, tm.tmHeight+tm.tmExternalLeading);
 	}
 		break;
 	case WM_TEST:
@@ -795,11 +783,13 @@ LRESULT CALLBACK paneProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 		break;
 	case WM_THREAD_UP:
 		paneInfoPtr->connectionState = PaneInfo::CONNECTED;
-		SetDlgItemTextA(hWnd, ID_STATUS_LABEL, "Status: CONNECTED");
+		SetDlgItemTextA(hWnd, ID_STATUS_CONTENT, "CONNECTED");
+		SetDlgItemTextA(hWnd, ID_CONNECT_BUTTON, "Disconnect");
 		break;
 	case WM_THREAD_DOWN:
 		paneInfoPtr->connectionState = PaneInfo::DISCONNECTED;
-		SetDlgItemTextA(hWnd, ID_STATUS_LABEL, "Status: DISCONNECTED");
+		SetDlgItemTextA(hWnd, ID_STATUS_CONTENT, "DISCONNECTED");
+		SetDlgItemTextA(hWnd, ID_CONNECT_BUTTON, "Connect");
 		if(paneInfoPtr->doClose)
 			SendMessage(GetParent(hWnd), WM_KILLPANE, paneIndex, 0);
 		break;
@@ -815,22 +805,69 @@ LRESULT CALLBACK paneProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 		switch (wmId)
 		{
 		case ID_WRITE_BUTTON:
-			/*
 			if (paneInfoPtr->connectionState == PaneInfo::WAITING || paneInfoPtr->connectionState == PaneInfo::DISCONNECTED)
+				MessageBox(hWnd, L"Must connect before writing.", L"Write", MB_OK);
+			else {
+				//retrieve buffers
+				size_t destLen = GetWindowTextLengthA(GetDlgItem(hWnd, ID_DEST_CONTENT)) + 1;
+				size_t commandLen= GetWindowTextLengthA(GetDlgItem(hWnd, ID_COMMAND_CONTENT)) + 1;
+				char* dest = (char*)malloc(sizeof(char)*destLen);
+				char* command = (char*)malloc(sizeof(char)*commandLen);
+				GetDlgItemTextA(hWnd, ID_DEST_CONTENT, dest, destLen);
+				GetDlgItemTextA(hWnd, ID_COMMAND_CONTENT, dest, commandLen);
+
+				//verify contents
+				if (count(dest, ' ', 16) != 8) {
+					MessageBox(hWnd, L"Dest must contain exactly 8, space delimited hex numbers.", L"Write", MB_OK);
+					free(dest); free(command);
+					break;
+				}
+				int commandSize = count(command, ' ', 16);
+				if (commandSize < 0) {
+					MessageBox(hWnd, L"Command must consist of space delimited hex numbers.", L"Write", MB_OK);
+					free(dest); free(command);
+					break;
+				}
+
+				//Retrieve message
+				uint8_t* byteArray;
+				size_t size = getMessage(dest, command, commandSize, byteArray);
+				if (size < 0) {
+					MessageBox(hWnd, L"Numbers entered in the Dest and Command fields must not exceed 0xFF in size", L"Write", MB_OK);
+					free(dest); free(command);
+					break;
+				}
+				paneInfoPtr->getCPMptr()->writeRaw((char*)byteArray, size);
+				free((void*)byteArray);
+				free(dest);
+				free(command);
 				break;
-				*/
+			}
+		case ID_SETTINGS_BUTTON:
+		{
+			if (paneInfoPtr->connectionState == PaneInfo::WAITING || paneInfoPtr->connectionState == PaneInfo::CONNECTED){
+				MessageBox(hWnd, L"Must be DISCONNECTED to change port settings.", L"Port Settings", MB_OK);
+				break;
+			}
+			if(DialogBoxParam(hInst, MAKEINTRESOURCE(IDD_PORTSETTINGS), hWnd, portSettingsProc, (LPARAM)&hWnd))
+				paneInfoPtr->populatePane(hWnd);
+		}
 			break;
-		case ID_CONNECT_BUTTON:/*
+		case ID_CONNECT_BUTTON:
 			if (paneInfoPtr->connectionState == PaneInfo::DISCONNECTED) {
-				paneInfoPtr->getCPMptr()->startThread()
+				paneInfoPtr->getCPMptr()->startThread(
+					PaneInfo::BAUDRATE_VAL_ARR[paneInfoPtr->baudRate_i],
+					PaneInfo::DATABITS_VAL_ARR[paneInfoPtr->dataBits_i],
+					PaneInfo::PARITY_VAL_ARR[paneInfoPtr->parity_i],
+					PaneInfo::STOPBITS_VAL_ARR[paneInfoPtr->stopBits_i]);
 				paneInfoPtr->connectionState = PaneInfo::WAITING;
-				SetDlgItemTextA(hWnd, ID_STATUS_LABEL, "Status: WAITING");
+				SetDlgItemTextA(hWnd, ID_STATUS_LABEL, "WAITING");
 			}
 			else if (paneInfoPtr->connectionState == PaneInfo::CONNECTED) {
+					paneInfoPtr->getCPMptr()->endThread();
 					paneInfoPtr->connectionState = PaneInfo::WAITING;
-					SetDlgItemTextA(hWnd, ID_STATUS_LABEL, "Status: WAITING");
+					SetDlgItemTextA(hWnd, ID_STATUS_LABEL, "WAITING");
 				}
-				*/
 			break;
 		default:
 			return DefWindowProc(hWnd, message, wParam, lParam);
@@ -959,6 +996,44 @@ INT_PTR CALLBACK removePaneProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM l
 	}
 	return (INT_PTR)FALSE;
 }
+
+INT_PTR CALLBACK portSettingsProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam) {
+	static int paneIndex;
+	static HWND paneWnd;
+	UINT_PTR retVal = false;
+	switch (message) {
+	case WM_INITDIALOG:
+		for (int k = 0; k < PaneInfo::BAUDRATE_I_COUNT; k++)
+			SendDlgItemMessage(hWnd, IDC_PORTSETTINGS_BAUDRATE, CB_ADDSTRING, 0, (LPARAM)PaneInfo::BAUDRATE_NAME_ARR[k]);
+		for (int k = 0; k < PaneInfo::DATABITS_I_COUNT; k++)
+			SendDlgItemMessage(hWnd, IDC_PORTSETTINGS_DATABITS, CB_ADDSTRING, 0, (LPARAM)PaneInfo::DATABITS_NAME_ARR[k]);
+		for (int k = 0; k < PaneInfo::STOPBITS_I_COUNT; k++)
+			SendDlgItemMessage(hWnd, IDC_PORTSETTINGS_STOPBITS, CB_ADDSTRING, 0, (LPARAM)PaneInfo::STOPBITS_NAME_ARR[k]);
+		for (int k = 0; k < PaneInfo::PARITY_I_COUNT; k++)
+			SendDlgItemMessage(hWnd, IDC_PORTSETTINGS_PARITY, CB_ADDSTRING, 0, (LPARAM)PaneInfo::PARITY_NAME_ARR[k]);
+		paneWnd = *(HWND*) lParam;
+		paneIndex = GetDlgCtrlID(paneWnd) - ID_PANE0;
+		SendDlgItemMessage(hWnd, IDC_PORTSETTINGS_BAUDRATE, CB_SETCURSEL, paneInfoPtrArr[paneIndex]->baudRate_i, 0);
+		SendDlgItemMessage(hWnd, IDC_PORTSETTINGS_DATABITS, CB_SETCURSEL, paneInfoPtrArr[paneIndex]->dataBits_i, 0);
+		SendDlgItemMessage(hWnd, IDC_PORTSETTINGS_STOPBITS, CB_SETCURSEL, paneInfoPtrArr[paneIndex]->stopBits_i, 0);
+		SendDlgItemMessage(hWnd, IDC_PORTSETTINGS_PARITY, CB_SETCURSEL, paneInfoPtrArr[paneIndex]->parity_i, 0);
+		break;
+	case WM_COMMAND:
+		switch (LOWORD(wParam))
+		{
+		case IDOK:
+			paneInfoPtrArr[paneIndex]->baudRate_i = SendDlgItemMessage(hWnd, IDC_PORTSETTINGS_BAUDRATE, CB_GETCURSEL, 0, 0);
+			paneInfoPtrArr[paneIndex]->dataBits_i = SendDlgItemMessage(hWnd, IDC_PORTSETTINGS_DATABITS, CB_GETCURSEL, 0, 0);
+			paneInfoPtrArr[paneIndex]->stopBits_i = SendDlgItemMessage(hWnd, IDC_PORTSETTINGS_STOPBITS, CB_GETCURSEL, 0, 0);
+			paneInfoPtrArr[paneIndex]->parity_i = SendDlgItemMessage(hWnd, IDC_PORTSETTINGS_PARITY, CB_GETCURSEL, 0, 0);
+			retVal = true;
+		case IDCANCEL:
+			EndDialog(hWnd, wParam);
+			return (INT_PTR)retVal;
+		}
+	}
+	return (INT_PTR)FALSE;
+}
 ///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 ///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 //Other functions
@@ -1024,50 +1099,9 @@ BOOL CALLBACK ResizeChildren(HWND hWndChild, LPARAM lparam) {
 	return TRUE;
 }
 
-void initPane(HWND paneWnd, int avgWidth, int height) {
-	int hMargin = 2 * avgWidth;
-	int currHeight = 2; //vertical margin
-	CreateWindow(L"Static", L"", WS_VISIBLE | WS_CHILD, hMargin, (currHeight++) * height, 20 * avgWidth, height, paneWnd, (HMENU)ID_PORTNAME_LABEL, NULL, NULL);
-	CreateWindow(L"Static", L"", WS_VISIBLE | WS_CHILD, hMargin, (currHeight++) * height, 20 * avgWidth, height, paneWnd, (HMENU)ID_FILENAME_LABEL, NULL, NULL);
-	CreateWindow(L"Static", L"", WS_VISIBLE | WS_CHILD, hMargin, (currHeight++) * height, 20 * avgWidth, height, paneWnd, (HMENU)ID_STATUS_LABEL, NULL, NULL);
-	CreateWindow(L"Button", L"Connect", WS_VISIBLE|WS_CHILD, PANEWIDTH_IN_PIXELS - 2 * hMargin - 10 * avgWidth, (currHeight++) * height, 10 * avgWidth, height, paneWnd, (HMENU)ID_CONNECT_BUTTON, NULL, NULL);
-	currHeight++;
-	CreateWindow(L"Static", L"Destination:", WS_VISIBLE | WS_CHILD, hMargin, (currHeight++) * height, 20 * avgWidth, height, paneWnd, (HMENU)ID_DEST_LABEL, NULL, NULL);
-	CreateWindow(L"EDIT", L"", WS_VISIBLE | WS_CHILD | WS_BORDER, hMargin, (currHeight++) * height, PANEWIDTH_IN_PIXELS - 4 * avgWidth, height, paneWnd, (HMENU)ID_DEST_EDIT, NULL, NULL);
-	currHeight++;
-	CreateWindow(L"Static", L"Command:", WS_VISIBLE | WS_CHILD, hMargin, (currHeight++) * height, 20 * avgWidth, height, paneWnd, (HMENU)ID_COMMAND_LABEL, NULL, NULL);
-	CreateWindow(L"EDIT", L"", WS_VISIBLE | WS_CHILD | WS_BORDER, hMargin, (currHeight++) * height, PANEWIDTH_IN_PIXELS - 4 * avgWidth, height, paneWnd, (HMENU)ID_COMMAND_EDIT, NULL, NULL);
-	currHeight++;
-	CreateWindow(L"Button", L"Write", WS_VISIBLE | WS_CHILD, PANEWIDTH_IN_PIXELS - 2 * hMargin - 10*avgWidth, (currHeight++) * height, 10 * avgWidth, height, paneWnd, (HMENU)ID_WRITE_BUTTON, NULL, NULL);
-}
-
-void populatePane(HWND paneWnd, PaneInfo* paneInfoPtr) {
-	size_t itowSize = 0;
-	for (unsigned k = paneInfoPtr->getPortNum(); k > 0; k /= 10)
-		itowSize++;
-	wchar_t* temp = (wchar_t*)malloc(sizeof(wchar_t)*(4 + itowSize));
-	wcscpy(temp, L"COM");
-	_itow(paneInfoPtr->getPortNum(), temp + 3, 10);
-	SetDlgItemText(paneWnd, ID_PORTNAME_LABEL, temp);
-	free(temp);
-
-	temp = (wchar_t*)malloc(sizeof(wchar_t)*(wcslen(paneInfoPtr->getFileName()) + 11));
-	wcscpy(temp, L"FileName: ");
-	wcscpy(temp + 10, paneInfoPtr->getFileName());
-	SetDlgItemText(paneWnd, ID_FILENAME_LABEL, temp);
-	free(temp);
-
-	switch (paneInfoPtr->connectionState) {
-	case PaneInfo::CONNECTED:
-		SetDlgItemText(paneWnd, ID_STATUS_LABEL, L"Status: CONNECTED");
-		break;
-	case PaneInfo::DISCONNECTED:
-		SetDlgItemText(paneWnd, ID_STATUS_LABEL, L"Status: DISCONNECTED");
-		break;
-	case PaneInfo::WAITING:
-		SetDlgItemText(paneWnd, ID_STATUS_LABEL, L"Status: WAITING");
-		break;
-	default:
-		SetDlgItemText(paneWnd, ID_STATUS_LABEL, L"status not recognized");
-	}
+void printInt(long val) {
+	char buffer[128];
+	_ltoa(val, buffer, 10);
+	OutputDebugStringA(buffer);
+	OutputDebugStringA("\n");
 }

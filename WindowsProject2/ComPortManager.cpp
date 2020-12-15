@@ -83,11 +83,11 @@ ComPortManager::~ComPortManager() {
 	CloseHandle(writeRequestEvent);
 }
 
-void ComPortManager::startThread(uint32_t baudRate, uint32_t dataBits, uint32_t parity, uint32_t stopBits) {
-	this->baudRate = baudRate;
-	this->dataBits = dataBits;
-	this->parity = parity;
-	this->stopBits = stopBits;
+void ComPortManager::startThread(uint32_t baudRate_i, uint32_t dataBits_i, uint32_t parity_i, uint32_t stopBits_i) {
+	this->baudRate_i = baudRate_i;
+	this->dataBits_i = dataBits_i;
+	this->parity_i = parity_i;
+	this->stopBits_i = stopBits_i;
 	_beginthread(threadFtn, 0, this);
 }
 
@@ -124,7 +124,7 @@ void ComPortManager::handleRead(const BYTE* buffer, DWORD numChars) {
 	for (unsigned i = 0; i < numChars; i++) {
 		sprintf_s(mComPortNameLen + hexBuffer + 3 * i, 3, "%02x", (unsigned char)buffer[i] & 0xff);
 		if (i != numChars - 1)
-			hexBuffer[mComPortNameLen + 3 * i + 2] = ':';
+			hexBuffer[mComPortNameLen + 3 * i + 2] = ' ';
 		else
 			hexBuffer[mComPortNameLen + 3 * i + 2] = '\n';
 	}
@@ -140,6 +140,15 @@ void ComPortManager::handleWrite(int errorCode, const char* errorMsg) {
 	writeCallback(threadContext, errorCode, errorMsg);
 	if (errorCode == 0)
 		PostMessage(mPaneWindow, WM_THREAD_SENT, 0, 0);
+	else{
+		int errorLen = strlen(errorMsg);
+		int comPortNameLen = strlen(mComPortName);
+		char* buffer = (char*)malloc(sizeof(char)*(errorLen + 1 + comPortNameLen + 2));
+		strcpy(buffer, mComPortName);
+		strcpy(buffer + comPortNameLen, ": ");
+		strcpy(buffer + comPortNameLen + 2, errorMsg);
+		PostMessage(mPaneWindow, WM_THREAD_ERROR, (WPARAM)buffer, 0);
+	}
 }
 
 bool ComPortManager::connect() {
@@ -174,10 +183,10 @@ bool ComPortManager::connect() {
 	//For some reason, only these five fields matter, despite the spec's claims to the contrary.
 	//The rest I keep at zero
 	dcb.DCBlength = sizeof(DCB);
-	dcb.BaudRate = baudRate;
-	dcb.ByteSize = dataBits;
-	dcb.Parity = parity;
-	dcb.StopBits = stopBits;
+	dcb.BaudRate = baudRate_i;
+	dcb.ByteSize = dataBits_i;
+	dcb.Parity = parity_i;
+	dcb.StopBits = stopBits_i;
 	fSuccess = SetCommState(hCom, &dcb);
 	if (!fSuccess) {
 		log("SetCommState failed");

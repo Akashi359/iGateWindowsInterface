@@ -25,7 +25,7 @@ private:
 	char* mFilePath;
 	HANDLE killEvent, writeRequestEvent;
 	HANDLE hCom, hFile;
-	uint32_t baudRate, dataBits, parity, stopBits;
+	uint32_t baudRate_i, dataBits_i, parity_i, stopBits_i;
 	void* threadContext;
 
 	bool connect();
@@ -44,7 +44,7 @@ public:
 	void handleRead(const BYTE*, DWORD);
 	ComPortManager(unsigned comPortNum, const wchar_t* fileName, HWND uiWindow);
 	~ComPortManager();
-	void startThread(uint32_t baudRate, uint32_t dataBits, uint32_t parity, uint32_t stopBits);
+	void startThread(uint32_t baudRate_i, uint32_t dataBits_i, uint32_t parity_i, uint32_t stopBits_i);
 	bool endThread();
 	/*
 		It is the caller's responsibility to free the buffer.

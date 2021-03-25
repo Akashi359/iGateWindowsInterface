@@ -21,6 +21,9 @@
 #define IDC_PORTSETTINGS_DATABITS		118
 #define IDC_PORTSETTINGS_STOPBITS		119
 #define IDC_PORTSETTINGS_PARITY			120
+#define IDD_MSGSETTINGS					121
+#define IDC_MSGSETTINGS_DEST			122
+#define IDC_MSGSETTINGS_CMD				123
 #define IDR_MAINFRAME                   128
 #define IDC_STATIC                      -1
 

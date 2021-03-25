@@ -6,9 +6,7 @@
 
 void readHook(void* threadContext, char* buffer, int size) {}
 
-void writeCallback(void* threadContext, int errorCode, const char* errorMsg) {}
-
-void* init() {
+void* init(void* objectPtr) {
 	return 0;
 }
 

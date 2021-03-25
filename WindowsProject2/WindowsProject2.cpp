@@ -1,21 +1,17 @@
 // WindowsProject2.cpp : Defines the entry point for the application.
 //
 
-//TODO: implement error popup. implement wm_thread_error message with error name.
-//TODO: track down all uses of malloc and throw an error popup and application shutdown.
+//TODO: remove Message.cpp and replace with ByteBuffer.cpp
+//TODO: replace c strings in PaneInfo.h with ByteBuffers.
 
+//How do I detect that UI has been entered into the text field? to disable the auto populate?
 #include "framework.h"
 #include "WindowsProject2.h"
 #include "PaneInfo.h"
 #include "ControlIdentifiers.h"
-#include "Message.h"
+#include "cpyalloc.h"
+#include "ByteBuffer.h"
 #include <unordered_map>
-
-//structs
-struct PaneInit {
-	wchar_t* portName;
-	wchar_t* fileName;
-};
 
 //constants
 const uint16_t MAX_LOADSTRING = 100;
@@ -25,6 +21,7 @@ const WCHAR* PANE_CLASSNAME = L"PaneClass";
 const WCHAR* ADDPANE_CLASSNAME = L"AddPaneClass";
 const WCHAR* REMOVEPANE_CLASSNAME = L"RemovePaneClass";
 const WCHAR* PORTSETTINGS_CLASSNAME = L"PortSettingsClass";
+const WCHAR* MSGSETTINGS_CLASSNAME = L"MsgSettingsClass"; 
 const uint16_t MAX_LINE_SIZE = 256;
 const uint16_t MAX_PANE_COUNT = 6; //if you change this number, go into ControlIdentifiers.h and make sure there are enough contiguous ID_PANEX integers reserved.
 const uint16_t PANEWIDTH_IN_PIXELS = 300;
@@ -33,7 +30,6 @@ const uint16_t PANEHEIGHT_IN_PIXELS = 300;
 const uint16_t IDM_ADDPANE = 3;		//tells the mainwindow that the "add pane" button has been pressed, which will open a dialogbox
 const uint16_t IDM_REMOVEPANE = 4;	//tells the mainwindow that the "remove pane" button has been pressed, which will open a dialogbox
 const uint16_t IDM_TEST = 5;
-const uint16_t IDM_ERROR = 6;
 
 // Global Variables:
 HWND	mainWnd;
@@ -55,6 +51,7 @@ ATOM                registerInputClass(HINSTANCE);
 ATOM				registerAddPaneClass(HINSTANCE);
 ATOM				registerRemovePaneClass(HINSTANCE);
 ATOM				registerPortSettingsClass(HINSTANCE);
+ATOM				registerMsgSettingsClass(HINSTANCE);
 ATOM				registerPaneClass(HINSTANCE);
 LRESULT CALLBACK    MainProc(HWND, UINT, WPARAM, LPARAM);
 LRESULT CALLBACK    OutputProc(HWND, UINT, WPARAM, LPARAM);
@@ -65,6 +62,7 @@ INT_PTR CALLBACK    About(HWND, UINT, WPARAM, LPARAM);
 INT_PTR CALLBACK	addPaneProc(HWND, UINT, WPARAM, LPARAM);
 INT_PTR CALLBACK	removePaneProc(HWND, UINT, WPARAM, LPARAM);
 INT_PTR CALLBACK	portSettingsProc(HWND, UINT, WPARAM, LPARAM);
+INT_PTR CALLBACK	msgSettingsProc(HWND, UINT, WPARAM, LPARAM);
 BOOL CALLBACK		ResizeChildren(HWND, LPARAM);
 void				addMenus(HWND);
 void				addWindows(HWND);	
@@ -95,6 +93,7 @@ int APIENTRY wWinMain(_In_ HINSTANCE hInstance,
 	registerRemovePaneClass(hInstance);
 	registerPaneClass(hInstance);
 	registerPortSettingsClass(hInstance);
+	registerMsgSettingsClass(hInstance);
 
     // Perform application initialization:
     if (!InitInstance (hInstance, nCmdShow))
@@ -243,6 +242,10 @@ ATOM registerPaneClass(HINSTANCE hInstance) {
 ATOM registerPortSettingsClass(HINSTANCE hInstance) {
 	return registerClass(hInstance, portSettingsProc, PORTSETTINGS_CLASSNAME);
 }
+
+ATOM registerMsgSettingsClass(HINSTANCE hInstance) {
+	return registerClass(hInstance, msgSettingsProc, MSGSETTINGS_CLASSNAME);
+}
 //---------------------------------------------------------------------------------------------------------------------------------------------------------------
 //---------------------------------------------------------------------------------------------------------------------------------------------------------------
 //Proc Functions
@@ -283,14 +286,14 @@ LRESULT CALLBACK MainProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 				break;
 			case IDM_ADDPANE:
 				if (numPanes >= MAX_PANE_COUNT) {
-					PostMessage(hWnd, IDM_ERROR, NULL, NULL);
+					MessageBoxA(GetParent(hWnd), "Pane Limit reached, cannot add new pane.", "Add Pane", MB_OK);
 					break;
 				}
 				DialogBox(hInst, MAKEINTRESOURCE(IDD_ADDPANE), hWnd, addPaneProc);
 				break;
 			case IDM_REMOVEPANE:
 				if (numPanes == 0) {
-					PostMessage(hWnd, IDM_ERROR, NULL, NULL);
+					MessageBoxA(GetParent(hWnd), "No Pane exists, cannot remove pane.", "Remove Pane", MB_OK);
 					break;
 				}
 				DialogBox(hInst, MAKEINTRESOURCE(IDD_REMOVEPANE), hWnd, removePaneProc);
@@ -459,8 +462,9 @@ LRESULT CALLBACK OutputProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lPara
 			startIndex = (++startIndex) % MAX_LINE_SIZE;
 		}
 
-		//place char buffer into line array, tell child to update
-		linesArray[lastLine] = (char*)wParam;
+		//place char buffer into line array
+		linesArray[lastLine] = ((ByteBuffer*)wParam)->getString(16, ' ', (int)lParam);
+
 		//only scroll if a line was added
 		if (lineAdded) {
 			//retrieve scrollinfo object
@@ -661,20 +665,30 @@ LRESULT CALLBACK InputProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam
 	case WM_THREAD_UP:
 	case WM_THREAD_DOWN:
 	case WM_THREAD_SENT:
-		SendDlgItemMessage(hWnd, ID_PANE0 + portNum_to_panePos_map[(unsigned)wParam], message, 0, 0);
+	case WM_THREAD_RECV:
+		SendDlgItemMessage(hWnd, ID_PANE0 + (int)wParam, message, 0, 0);
+		SendDlgItemMessage(GetParent(hWnd), ID_OUTPUT, message, wParam, lParam);
 		break;
 	case WM_THREAD_ERROR:
-		SendDlgItemMessage(GetParent(hWnd), ID_OUTPUT, WM_THREAD_ERROR, wParam, lParam);
-		break;
-	case WM_THREAD_RECV:
-		SendDlgItemMessage(GetParent(hWnd), ID_OUTPUT, WM_THREAD_RECV, wParam, lParam);
+		size_t itoaSize = 0;
+		for (unsigned k = wParam; k > 0; k /= 10)
+			itoaSize++;
+		char* title = (char*)malloc(sizeof(char)*(17 + itoaSize));
+		strcpy(title, "Thread Error COM");
+		_itoa(wParam, title + 16, 10);
+		MessageBoxA(GetParent(hWnd), (char*)lParam, title, MB_OK);
+		free(title);
 		break;
 	case WM_CREATEPANE:
 	{
 		si.cbSize = sizeof(si);
 		si.fMask = SIF_POS;
 		GetScrollInfo(hWnd, SB_HORZ, &si);
-		paneInfoPtrArr[numPanes] = new PaneInfo((unsigned)wParam, (wchar_t*)lParam, hWnd);
+		paneInfoPtrArr[numPanes] = PaneInfo::initialize((unsigned)wParam, (wchar_t*)lParam, hWnd);
+		if(paneInfoPtrArr[numPanes] == nullptr){
+			MessageBoxA(GetParent(hWnd), "Failed to create new PaneInfo Object.", "Create Pane", MB_OK);
+			break;
+		}
 		HWND newPane = CreateWindow(PANE_CLASSNAME,
 			(LPCTSTR)NULL,
 			WS_CHILD | WS_VISIBLE | WS_BORDER,
@@ -683,7 +697,14 @@ LRESULT CALLBACK InputProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam
 			(HMENU)(uint16_t)(ID_PANE0+numPanes),
 			hInst,
 			paneInfoPtrArr+numPanes);
-		paneInfoPtrArr[numPanes]->populatePane(newPane);
+		if(newPane == nullptr) {
+			delete(paneInfoPtrArr[numPanes]);
+			paneInfoPtrArr[numPanes] = nullptr;
+			MessageBoxA(GetParent(hWnd), "Failed to create new Window", "Create Pane", MB_OK);
+			break;
+		}
+		paneInfoPtrArr[numPanes]->drawPane(newPane);
+
 		portNum_to_panePos_map[(unsigned)wParam] = numPanes;
 		numPanes++;
 
@@ -693,13 +714,13 @@ LRESULT CALLBACK InputProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam
 		SetScrollInfo(hWnd, SB_HORZ, &si, TRUE);
 	}
 		break;
-	case WM_DESTROYPANE:
+	case WM_KILLPANE:
 		SendDlgItemMessage(hWnd, ID_PANE0 + (int)wParam, WM_KILLPANE, 0, 0);
 		break;
-	case WM_KILLPANE:
+	case WM_DESTROYPANE:
 		//index of pane is located in wParam.
 		//the thread is guaranteed to be not running
-		//sent via paneProc()'s WM_DESTROYPANE or WM_THREADDOWN case statements.
+		//sent via paneProc()'s WM_KILLPANE or WM_THREADDOWN case statements.
 	{
 		char buff[256];
 		_itoa(wParam, buff, 10);
@@ -715,7 +736,7 @@ LRESULT CALLBACK InputProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam
 		numPanes--;
 		for (int k = paneIndex; k < numPanes; k++) {
 			paneInfoPtrArr[k] = paneInfoPtrArr[k + 1];
-			paneInfoPtrArr[k]->populatePane(GetDlgItem(hWnd, ID_PANE0 + k));
+			paneInfoPtrArr[k]->drawPane(GetDlgItem(hWnd, ID_PANE0 + k));
 			portNum_to_panePos_map[paneInfoPtrArr[k]->getPortNum()] = k;
 		}
 
@@ -756,6 +777,7 @@ LRESULT CALLBACK InputProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam
 LRESULT CALLBACK paneProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam) {
 	int paneIndex = GetDlgCtrlID(hWnd) - ID_PANE0;
 	PaneInfo* paneInfoPtr = paneInfoPtrArr[paneIndex];
+	char buff[256];
 	switch (message) {
 	case WM_CREATE:
 	{
@@ -774,7 +796,6 @@ LRESULT CALLBACK paneProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 		break;
 	case WM_TEST:
 	{
-		char buff[256];
 		_itoa(paneIndex, buff, 10);
 		OutputDebugStringA("pane ");
 		OutputDebugStringA(buff);
@@ -782,21 +803,10 @@ LRESULT CALLBACK paneProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 	}
 		break;
 	case WM_THREAD_UP:
-		paneInfoPtr->connectionState = PaneInfo::CONNECTED;
-		SetDlgItemTextA(hWnd, ID_STATUS_CONTENT, "CONNECTED");
-		SetDlgItemTextA(hWnd, ID_CONNECT_BUTTON, "Disconnect");
-		break;
 	case WM_THREAD_DOWN:
-		paneInfoPtr->connectionState = PaneInfo::DISCONNECTED;
-		SetDlgItemTextA(hWnd, ID_STATUS_CONTENT, "DISCONNECTED");
-		SetDlgItemTextA(hWnd, ID_CONNECT_BUTTON, "Connect");
-		if(paneInfoPtr->doClose)
-			SendMessage(GetParent(hWnd), WM_KILLPANE, paneIndex, 0);
-		break;
 	case WM_THREAD_SENT:
-		break;
 	case WM_THREAD_RECV:
-		SendDlgItemMessage(mainWnd, ID_OUTPUT, message, wParam, lParam);
+		paneInfoPtr->drawPane(hWnd);
 		break;
 	case WM_COMMAND:
 	{
@@ -804,70 +814,20 @@ LRESULT CALLBACK paneProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 		// Parse the menu selections:
 		switch (wmId)
 		{
+		case ID_MSGSETTINGS_BUTTON:
+			DialogBoxParam(hInst, MAKEINTRESOURCE(IDD_MSGSETTINGS), hWnd, msgSettingsProc, (LPARAM)&hWnd);
+			break;
 		case ID_WRITE_BUTTON:
-			if (paneInfoPtr->connectionState == PaneInfo::WAITING || paneInfoPtr->connectionState == PaneInfo::DISCONNECTED)
-				MessageBox(hWnd, L"Must connect before writing.", L"Write", MB_OK);
-			else {
-				//retrieve buffers
-				size_t destLen = GetWindowTextLengthA(GetDlgItem(hWnd, ID_DEST_CONTENT)) + 1;
-				size_t commandLen= GetWindowTextLengthA(GetDlgItem(hWnd, ID_COMMAND_CONTENT)) + 1;
-				char* dest = (char*)malloc(sizeof(char)*destLen);
-				char* command = (char*)malloc(sizeof(char)*commandLen);
-				GetDlgItemTextA(hWnd, ID_DEST_CONTENT, dest, destLen);
-				GetDlgItemTextA(hWnd, ID_COMMAND_CONTENT, dest, commandLen);
-
-				//verify contents
-				if (count(dest, ' ', 16) != 8) {
-					MessageBox(hWnd, L"Dest must contain exactly 8, space delimited hex numbers.", L"Write", MB_OK);
-					free(dest); free(command);
-					break;
-				}
-				int commandSize = count(command, ' ', 16);
-				if (commandSize < 0) {
-					MessageBox(hWnd, L"Command must consist of space delimited hex numbers.", L"Write", MB_OK);
-					free(dest); free(command);
-					break;
-				}
-
-				//Retrieve message
-				uint8_t* byteArray;
-				size_t size = getMessage(dest, command, commandSize, byteArray);
-				if (size < 0) {
-					MessageBox(hWnd, L"Numbers entered in the Dest and Command fields must not exceed 0xFF in size", L"Write", MB_OK);
-					free(dest); free(command);
-					break;
-				}
-				paneInfoPtr->getCPMptr()->writeRaw((char*)byteArray, size);
-				free((void*)byteArray);
-				free(dest);
-				free(command);
-				break;
-			}
+			if (!paneInfoPtr->write(buff)) 
+				MessageBoxA(hWnd, buff, "Write", MB_OK);
+			break;
 		case ID_SETTINGS_BUTTON:
-		{
-			if (paneInfoPtr->connectionState == PaneInfo::WAITING || paneInfoPtr->connectionState == PaneInfo::CONNECTED){
-				MessageBox(hWnd, L"Must be DISCONNECTED to change port settings.", L"Port Settings", MB_OK);
-				break;
-			}
 			if(DialogBoxParam(hInst, MAKEINTRESOURCE(IDD_PORTSETTINGS), hWnd, portSettingsProc, (LPARAM)&hWnd))
-				paneInfoPtr->populatePane(hWnd);
-		}
+				paneInfoPtr->drawPane(hWnd);
 			break;
 		case ID_CONNECT_BUTTON:
-			if (paneInfoPtr->connectionState == PaneInfo::DISCONNECTED) {
-				paneInfoPtr->getCPMptr()->startThread(
-					PaneInfo::BAUDRATE_VAL_ARR[paneInfoPtr->baudRate_i],
-					PaneInfo::DATABITS_VAL_ARR[paneInfoPtr->dataBits_i],
-					PaneInfo::PARITY_VAL_ARR[paneInfoPtr->parity_i],
-					PaneInfo::STOPBITS_VAL_ARR[paneInfoPtr->stopBits_i]);
-				paneInfoPtr->connectionState = PaneInfo::WAITING;
-				SetDlgItemTextA(hWnd, ID_STATUS_LABEL, "WAITING");
-			}
-			else if (paneInfoPtr->connectionState == PaneInfo::CONNECTED) {
-					paneInfoPtr->getCPMptr()->endThread();
-					paneInfoPtr->connectionState = PaneInfo::WAITING;
-					SetDlgItemTextA(hWnd, ID_STATUS_LABEL, "WAITING");
-				}
+			if(!paneInfoPtr->connect(buff))
+				MessageBoxA(hWnd, buff, "Connect", MB_OK);
 			break;
 		default:
 			return DefWindowProc(hWnd, message, wParam, lParam);
@@ -888,16 +848,11 @@ LRESULT CALLBACK paneProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 		_itoa(GetDlgCtrlID(hWnd), buff, 10);
 		OutputDebugStringA("pane ");
 		OutputDebugStringA(buff);
-		OutputDebugStringA(" received \"WM_DESTROYPANE\"\n");
+		OutputDebugStringA(" received \"WM_KILLPANE\"\n");
 	}
 		//This pane should be destroyed.
 		//Comes from removeProc's ID_OK case statement.
-		if (paneInfoPtr->connectionState == PaneInfo::CONNECTED || paneInfoPtr->connectionState == PaneInfo::WAITING) {
-			paneInfoPtr->doClose = true;
-			paneInfoPtr->getCPMptr()->endThread();
-			break;
-		}
-		SendMessage(GetParent(hWnd), WM_KILLPANE, paneIndex, 0);
+		paneInfoPtr->killPane();
 		break;
 	case WM_DESTROY:
 	{
@@ -969,7 +924,8 @@ INT_PTR CALLBACK removePaneProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM l
 	case WM_INITDIALOG:
 		OutputDebugStringA("removePaneProc received message \"WM_INITDIALOG\":");
 		for (int k = 0; k < numPanes; k++) {
-			paneInfoPtrArr[k]->getCPMptr()->getPortName(buffer);
+			strcpy(buffer, "COM");
+			_itoa(paneInfoPtrArr[k]->getPortNum(), buffer+3, 10);
 			OutputDebugStringA(buffer);
 			SendDlgItemMessageA(hWnd, IDC_REMOVEPANE_PORTNUM, CB_ADDSTRING, 0, (LPARAM) buffer);
 		}
@@ -988,7 +944,7 @@ INT_PTR CALLBACK removePaneProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM l
 				OutputDebugStringA(" selected\n");
 			}
 			if (paneIndex != CB_ERR)
-				SendDlgItemMessage(GetParent(hWnd), ID_INPUT, WM_DESTROYPANE, paneIndex, 0);
+				SendDlgItemMessage(GetParent(hWnd), ID_INPUT, WM_KILLPANE, paneIndex, 0);
 		case IDCANCEL:
 			EndDialog(hWnd, wParam);
 			return (INT_PTR)TRUE;
@@ -1034,6 +990,65 @@ INT_PTR CALLBACK portSettingsProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM
 	}
 	return (INT_PTR)FALSE;
 }
+
+INT_PTR CALLBACK msgSettingsProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam) {
+	static int paneIndex;
+	static HWND paneWnd;
+	switch (message) {
+	case WM_INITDIALOG:{
+		paneWnd = *(HWND*)lParam;
+		paneIndex = GetDlgCtrlID(paneWnd) - ID_PANE0;
+		char* temp = paneInfoPtrArr[paneIndex]->getDest()->getString(16, ' ');
+		if (paneInfoPtrArr[paneIndex]->getDest() != nullptr)
+			SetDlgItemTextA(hWnd, IDC_MSGSETTINGS_DEST, (LPCSTR)temp);
+		free(temp);
+		temp = paneInfoPtrArr[paneIndex]->getCommand()->getString(16, ' ');
+		if (paneInfoPtrArr[paneIndex]->getCommand() != nullptr)
+			SetDlgItemTextA(hWnd, IDC_MSGSETTINGS_CMD, (LPCSTR)temp);
+		free(temp);
+	}
+		break;
+	case WM_COMMAND:
+		switch (LOWORD(wParam))
+		{
+		case IDOK:
+		{
+			//TODO: verify that the contents of the dest and cmd buffers are all hex bytes here instead of later.
+			char destBuffer[256];
+			char cmdBuffer[256];
+			UINT destSize = GetDlgItemTextA(hWnd, IDC_MSGSETTINGS_DEST, destBuffer, 255);
+			UINT cmdSize = GetDlgItemTextA(hWnd, IDC_MSGSETTINGS_CMD, cmdBuffer, 255);
+			int retVal = ByteBuffer::verifyString(destBuffer, 16, ' ');
+			if (retVal < 0) {
+				MessageBoxA(hWnd, ByteBuffer::getErrorMsg(), "Message Settings", MB_OK);
+				break;
+			}
+			if (retVal != 8) {
+				MessageBox(hWnd, L"Destination field must contain exactly 8, space delimited hex numbers.", L"Message Settings", MB_OK);
+				break;
+			}
+			retVal = ByteBuffer::verifyString(cmdBuffer, 16, ' ');
+			if (retVal < 0) {
+				MessageBoxA(hWnd, ByteBuffer::getErrorMsg(), "Message Settings", MB_OK);
+				break;
+			}
+			if (cmdSize >= 254) {
+				MessageBox(hWnd, L"Command field too long.", L"Message Settings", MB_OK);
+				break;
+			}
+
+			paneInfoPtrArr[paneIndex]->setCommand(ByteBuffer::getByteBuffer(cmdBuffer, 16, ' '));
+			paneInfoPtrArr[paneIndex]->setDest(ByteBuffer::getByteBuffer(destBuffer, 16, ' '));
+			paneInfoPtrArr[paneIndex]->drawPane(paneWnd);
+		}
+		case IDCANCEL:
+			EndDialog(hWnd, wParam);
+			return (INT_PTR)TRUE;
+		}
+	}
+	return (INT_PTR)FALSE;
+}
+
 ///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 ///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 //Other functions

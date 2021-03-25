@@ -4,6 +4,8 @@
 
 char* cpyalloc(const char* src, size_t maxChars) {
 	char* newBuffer = (char*)malloc(sizeof(char)*(maxChars + 1));
+	if (!newBuffer)
+		return nullptr;
 	newBuffer[maxChars] = '\0';
 	strncpy(newBuffer, src, maxChars);
 	return newBuffer;
@@ -11,6 +13,8 @@ char* cpyalloc(const char* src, size_t maxChars) {
 
 wchar_t* cpyalloc(const wchar_t* src, size_t maxChars) {
 	wchar_t* newBuffer = (wchar_t*)malloc(sizeof(wchar_t)*(maxChars + 1));
+	if (!newBuffer)
+		return nullptr;
 	newBuffer[maxChars] = '\0';
 	wcsncpy(newBuffer, src, maxChars);
 	return newBuffer;
@@ -19,6 +23,8 @@ wchar_t* cpyalloc(const wchar_t* src, size_t maxChars) {
 char* cpyalloc(const char* src) {
 	size_t len = strlen(src);
 	char* newBuffer = (char*)malloc(sizeof(char)*(len + 1));
+	if (!newBuffer)
+		return nullptr;
 	strcpy(newBuffer, src);
 	return newBuffer;
 }
@@ -26,6 +32,8 @@ char* cpyalloc(const char* src) {
 wchar_t* cpyalloc(const wchar_t* src) {
 	size_t len = wcslen(src);
 	wchar_t* newBuffer = (wchar_t*)malloc(sizeof(wchar_t)*(len + 1));
+	if (!newBuffer)
+		return nullptr;
 	wcscpy(newBuffer, src);
 	return newBuffer;
 }

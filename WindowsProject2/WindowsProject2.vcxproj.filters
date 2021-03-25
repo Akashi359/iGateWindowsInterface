@@ -36,12 +36,6 @@
     <ClInclude Include="resource3.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="ComPortManager.h">
-      <Filter>Header Files</Filter>
-    </ClInclude>
-    <ClInclude Include="Queue.h">
-      <Filter>Header Files</Filter>
-    </ClInclude>
     <ClInclude Include="iGateDeviceSupport.h">
       <Filter>Header Files</Filter>
     </ClInclude>
@@ -54,15 +48,18 @@
     <ClInclude Include="ControlIdentifiers.h">
       <Filter>Source Files</Filter>
     </ClInclude>
-    <ClInclude Include="Message.h">
+    <ClInclude Include="ByteBuffer.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="ThreadManager.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="MpScQueue.h">
       <Filter>Header Files</Filter>
     </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="WindowsProject2.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
-    <ClCompile Include="ComPortManager.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
     <ClCompile Include="PaneInfo.cpp">
@@ -74,7 +71,13 @@
     <ClCompile Include="cpyalloc.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="Message.cpp">
+    <ClCompile Include="ByteBuffer.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="ThreadManager.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="McScQueue.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
   </ItemGroup>

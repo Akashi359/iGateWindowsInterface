@@ -29,3 +29,4 @@ const uint16_t ID_PARITY_LABEL = 124;
 const uint16_t ID_PARITY_CONTENT = 125;
 const uint16_t ID_SETTINGS_BUTTON = 126;
 const uint16_t ID_CONNECT_BUTTON = 127;
+const uint16_t ID_MSGSETTINGS_BUTTON = 128;

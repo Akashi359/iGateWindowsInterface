@@ -151,27 +151,28 @@
     </Link>
   </ItemDefinitionGroup>
   <ItemGroup>
-    <ClInclude Include="ComPortManager.h" />
+    <ClInclude Include="ByteBuffer.h" />
     <ClInclude Include="ControlIdentifiers.h" />
     <ClInclude Include="cpyalloc.h" />
     <ClInclude Include="framework.h" />
     <ClInclude Include="iGateDeviceSupport.h" />
-    <ClInclude Include="Message.h" />
+    <ClInclude Include="MpScQueue.h" />
     <ClInclude Include="PaneInfo.h" />
-    <ClInclude Include="Queue.h" />
     <ClInclude Include="Resource.h" />
     <ClInclude Include="resource1.h" />
     <ClInclude Include="resource2.h" />
     <ClInclude Include="resource3.h" />
     <ClInclude Include="targetver.h" />
+    <ClInclude Include="ThreadManager.h" />
     <ClInclude Include="WindowsProject2.h" />
   </ItemGroup>
   <ItemGroup>
-    <ClCompile Include="ComPortManager.cpp" />
+    <ClCompile Include="ByteBuffer.cpp" />
     <ClCompile Include="cpyalloc.cpp" />
     <ClCompile Include="iGateDeviceSupportDummy.c" />
-    <ClCompile Include="Message.cpp" />
+    <ClCompile Include="McScQueue.cpp" />
     <ClCompile Include="PaneInfo.cpp" />
+    <ClCompile Include="ThreadManager.cpp" />
     <ClCompile Include="WindowsProject2.cpp" />
   </ItemGroup>
   <ItemGroup>
